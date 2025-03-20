@@ -1,0 +1,7 @@
+services:
+  find_my:
+    image: ghcr.io/watsona4/find_my:latest
+    build: .
+    restart: unless-stopped
+    volumes:
+      - '~/.ssh:/ssh'
