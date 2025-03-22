@@ -4,4 +4,8 @@ services:
     build: .
     restart: unless-stopped
     volumes:
-      - '~/.ssh:/ssh'
+      - ~/.ssh:/ssh:ro
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
+    env_file:
+      - config.env

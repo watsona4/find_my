@@ -1,45 +1,43 @@
 import json
 import logging
+import os
 import time
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
 import paho.mqtt.client as mqtt
-from paramiko import SSHClient
+from paho.mqtt.enums import CallbackAPIVersion
+from paramiko import AutoAddPolicy, SSHClient
 
-MQTT_SERVER = "192.168.1.5"
-MQTT_USERNAME = ""
-MQTT_PASSWORD = ""
+MQTT_HOST: str = str(os.environ.get("MQTT_HOST", ""))
+MQTT_PORT: int = int(os.environ.get("MQTT_PORT", 1883))
 
-IOS_URL = "192.168.3.180"
-IOS_USERNAME = "root"
-IOS_KEYFILE = "/ssh/id_rsa"
-KNOWN_HOSTS = "/ssh/known_hosts"
-IOS_DATAPATH = (
-    "/private/var/mobile/Library/Caches/com.apple.findmy.fmipcore/Items.data"
-)
+TZ: str = str(os.environ.get("TZ", "UTC"))
 
-logging.basicConfig(
-    format="%(asctime)s [%(levelname)s]: %(message)s", level=logging.DEBUG
-)
+IOS_URL: str = str(os.environ.get("IOS_URL", ""))
+IOS_USERNAME: str = "root"
+IOS_KEYFILE: str = "/ssh/id_rsa"
+KNOWN_HOSTS: str = "/ssh/known_hosts"
+IOS_DATAPATH: str = "/private/var/mobile/Library/Caches/com.apple.findmy.fmipcore/Items.data"
+
+logging.basicConfig(format="%(asctime)s [%(levelname)s]: %(message)s", level=logging.DEBUG)
 
 
 def main():
 
-    mqtt_client = mqtt.Client()
+    mqtt_client = mqtt.Client(CallbackAPIVersion.VERSION2)
     mqtt_client.enable_logger()
 
-    mqtt_client.connect(MQTT_SERVER, 1883, 60)
+    mqtt_client.connect(MQTT_HOST, MQTT_PORT, 60)
     mqtt_client.loop_start()
 
     ssh_client = SSHClient()
     ssh_client.load_system_host_keys(filename=KNOWN_HOSTS)
+    ssh_client.set_missing_host_key_policy(AutoAddPolicy)
 
     while True:
 
-        ssh_client.connect(
-            IOS_URL, username=IOS_USERNAME, key_filename=IOS_KEYFILE
-        )
+        ssh_client.connect(IOS_URL, username=IOS_USERNAME, key_filename=IOS_KEYFILE)
 
         sftp = ssh_client.open_sftp()
 
@@ -52,28 +50,18 @@ def main():
         with open("Items.data") as datafile:
             data = json.load(datafile)
 
-        logging.info(
-            "Number of Apple Find My objects to process: %d", len(data)
-        )
+        logging.info("Number of Apple Find My objects to process: %d", len(data))
         for obj in data:
 
-            logging.info(
-                "Gathering data for next Apple Find My object to process"
-            )
+            logging.info("Gathering data for next Apple Find My object to process")
 
-            logging.info(
-                "Data gathered, sending to MQTT broker %s", MQTT_SERVER
-            )
+            logging.info("Data gathered, sending to MQTT broker %s", MQTT_HOST)
             identifier = obj["identifier"]
             name = obj["name"]
-            manufacturer = obj["productType"]["productInformation"][
-                "manufacturerName"
-            ]
+            manufacturer = obj["productType"]["productInformation"]["manufacturerName"]
             model = obj["productType"]["productInformation"]["modelName"]
             serial_number = obj["serialNumber"]
             sw_version = obj["systemVersion"]
-
-            address = obj["address"]["mapItemFullAddress"]
 
             latitude = obj["location"]["latitude"]
             longitude = obj["location"]["longitude"]
@@ -82,16 +70,12 @@ def main():
             horizontal_accuracy = obj["location"]["horizontalAccuracy"]
             timestamp = datetime.fromtimestamp(
                 int(obj["location"]["timeStamp"]) // 1000, timezone.utc
-            ).astimezone(ZoneInfo("America/New_York"))
+            ).astimezone(ZoneInfo(TZ))
 
             battery_status = obj["batteryStatus"]
-            antenna_power = obj["productType"]["productInformation"][
-                "antennaPower"
-            ]
+            antenna_power = obj["productType"]["productInformation"]["antennaPower"]
 
-            topic_base = (
-                f"homeassistant/device_tracker/findmy_{serial_number}/"
-            )
+            topic_base = f"homeassistant/device_tracker/findmy_{serial_number}/"
 
             config_topic = topic_base + "config"
             state_topic = topic_base + "state"
@@ -127,13 +111,9 @@ def main():
 
             logging.info("Sending MQTT data of Apple Find My object: %s", name)
 
-            mqtt_client.publish(
-                config_topic, json.dumps(config_data), retain=True
-            )
+            mqtt_client.publish(config_topic, json.dumps(config_data), retain=True)
             mqtt_client.publish(state_topic, state, retain=True)
-            mqtt_client.publish(
-                attributes_topic, json.dumps(attributes), retain=True
-            )
+            mqtt_client.publish(attributes_topic, json.dumps(attributes), retain=True)
             mqtt_client.publish(data_topic, json.dumps(obj), retain=True)
 
         time.sleep(60)
