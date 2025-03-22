@@ -20,7 +20,7 @@ IOS_KEYFILE: str = "/ssh/id_rsa"
 KNOWN_HOSTS: str = "/ssh/known_hosts"
 IOS_DATAPATH: str = "/private/var/mobile/Library/Caches/com.apple.findmy.fmipcore/Items.data"
 
-logging.basicConfig(format="%(asctime)s [%(levelname)s]: %(message)s", level=logging.DEBUG)
+logging.basicConfig(format="%(asctime)s [%(levelname)s]: %(message)s", level=logging.INFO)
 
 
 def main():
@@ -35,16 +35,20 @@ def main():
     ssh_client.load_system_host_keys(filename=KNOWN_HOSTS)
     ssh_client.set_missing_host_key_policy(AutoAddPolicy)
 
+    ssh_client.connect(IOS_URL, username=IOS_USERNAME, key_filename=IOS_KEYFILE)
+
     while True:
 
-        ssh_client.connect(IOS_URL, username=IOS_USERNAME, key_filename=IOS_KEYFILE)
+        logging.info("Opening FindMy app")
+        ssh_client.exec_command("open com.apple.findmy")
+        time.sleep(5)
 
         sftp = ssh_client.open_sftp()
 
         logging.info("Downloading Items.data from iOS device")
         sftp.get(remotepath=IOS_DATAPATH, localpath="Items.data")
 
-        ssh_client.close()
+        sftp.close()
 
         logging.info("Extracting data into JSON object")
         with open("Items.data") as datafile:
@@ -62,6 +66,8 @@ def main():
             model = obj["productType"]["productInformation"]["modelName"]
             serial_number = obj["serialNumber"]
             sw_version = obj["systemVersion"]
+
+            address = obj["address"]["mapItemFullAddress"]
 
             latitude = obj["location"]["latitude"]
             longitude = obj["location"]["longitude"]
@@ -110,13 +116,19 @@ def main():
             }
 
             logging.info("Sending MQTT data of Apple Find My object: %s", name)
+            logging.info("    Address: %s", address)
 
             mqtt_client.publish(config_topic, json.dumps(config_data), retain=True)
             mqtt_client.publish(state_topic, state, retain=True)
             mqtt_client.publish(attributes_topic, json.dumps(attributes), retain=True)
             mqtt_client.publish(data_topic, json.dumps(obj), retain=True)
 
-        time.sleep(60)
+        time.sleep(25)
+
+        logging.info("Opening Weather app")
+        ssh_client.exec_command("open com.apple.weather")
+
+        time.sleep(30)
 
 
 if __name__ == "__main__":
