@@ -23,12 +23,22 @@ IOS_DATAPATH: str = "/private/var/mobile/Library/Caches/com.apple.findmy.fmipcor
 logging.basicConfig(format="%(asctime)s [%(levelname)s]: %(message)s", level=logging.INFO)
 
 
+def on_healthcheck(client, userdata, message):
+    logging.info("Healthcheck requested...")
+    if message.payload.decode() == "CHECK":
+        client.publish("find_my/healthcheck/status", "OK")
+
+
 def main():
 
     mqtt_client = mqtt.Client(CallbackAPIVersion.VERSION2)
     mqtt_client.enable_logger()
 
     mqtt_client.connect(MQTT_HOST, MQTT_PORT, 60)
+
+    mqtt_client.subscribe("find_my/healthcheck/status")
+    mqtt_client.message_callback_add("find_my/healthcheck/status", on_healthcheck)
+
     mqtt_client.loop_start()
 
     ssh_client = SSHClient()
