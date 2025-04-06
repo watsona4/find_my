@@ -18,7 +18,7 @@ RUN pip install --no-cache --break-system-packages /wheels/*
 
 COPY find_my.py healthcheck.sh ./
 
-HEALTHCHECK --interval=15m CMD ./healthcheck.sh
+HEALTHCHECK CMD ./healthcheck.sh
 
 LABEL org.opencontainers.image.source=https://github.com/watsona4/find_my
 
