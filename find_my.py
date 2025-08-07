@@ -8,7 +8,7 @@ from zoneinfo import ZoneInfo
 
 import paho.mqtt.client as mqtt
 from paho.mqtt.enums import CallbackAPIVersion
-from paramiko import AutoAddPolicy, SSHClient
+from paramiko import WarningPolicy, SSHClient
 
 MQTT_HOST: str = str(os.environ.get("MQTT_HOST", ""))
 MQTT_PORT: int = int(os.environ.get("MQTT_PORT", 1883))
@@ -45,7 +45,7 @@ def main():
 
     ssh_client = SSHClient()
     ssh_client.load_system_host_keys(filename=KNOWN_HOSTS)
-    ssh_client.set_missing_host_key_policy(AutoAddPolicy)
+    ssh_client.set_missing_host_key_policy(WarningPolicy)
 
     ssh_client.connect(IOS_URL, username=IOS_USERNAME, key_filename=IOS_KEYFILE)
 
