@@ -12,6 +12,8 @@ from paramiko import WarningPolicy, SSHClient
 
 MQTT_HOST: str = str(os.environ.get("MQTT_HOST", ""))
 MQTT_PORT: int = int(os.environ.get("MQTT_PORT", 1883))
+MQTT_USERNAME: str = str(os.environ.get("MQTT_USERNAME", ""))
+MQTT_PASSWORD: str = str(os.environ.get("MQTT_PASSWORD", ""))
 
 TZ: str = str(os.environ.get("TZ", "UTC"))
 
@@ -35,6 +37,8 @@ def main():
 
     mqtt_client = mqtt.Client(CallbackAPIVersion.VERSION2)
     mqtt_client.enable_logger()
+
+    mqtt_client.username_pw_set(MQTT_USERNAME, MQTT_PASSWORD)
 
     mqtt_client.connect(MQTT_HOST, MQTT_PORT, 60)
 
