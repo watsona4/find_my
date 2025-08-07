@@ -95,7 +95,7 @@ def main():
             battery_status = obj["batteryStatus"]
             antenna_power = obj["productType"]["productInformation"]["antennaPower"]
 
-            topic_base = f"homeassistant/device_tracker/findmy_{serial_number}/"
+            topic_base = f"homeassistant/device_tracker/findmy_{serial_number.replace(':', '')}/"
 
             config_topic = topic_base + "config"
             state_topic = topic_base + "state"
@@ -149,7 +149,7 @@ def main():
             location_capable = obj["locationCapable"]
             if not location_capable:
                 continue
-            
+
             location = obj["location"]
             if location is None:
                 continue
@@ -174,7 +174,7 @@ def main():
 
             battery_status = obj["batteryStatus"]
 
-            topic_base = f"homeassistant/device_tracker/findmy_{serial_number}/"
+            topic_base = f"homeassistant/device_tracker/findmy_{serial_number.replace(':', '')}/"
 
             config_topic = topic_base + "config"
             state_topic = topic_base + "state"
@@ -215,12 +215,12 @@ def main():
             mqtt_client.publish(attributes_topic, json.dumps(attributes), retain=True)
             mqtt_client.publish(data_topic, json.dumps(obj), retain=True)
 
-        time.sleep(25)
+        # time.sleep(25)
 
         logging.info("Opening Weather app")
         ssh_client.exec_command("open com.apple.weather")
 
-        time.sleep(30)
+        time.sleep(5)
 
 
 if __name__ == "__main__":
