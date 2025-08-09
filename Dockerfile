@@ -20,7 +20,7 @@ COPY find_my.py healthcheck.py ./
 RUN chmod +x healthcheck.py
 
 HEALTHCHECK --interval=60s --timeout=10s --start-period=90s --retries=3 \
-  CMD /usr/bin/python3 healthcheck.py
+  CMD python3 healthcheck.py
 
 LABEL org.opencontainers.image.source=https://github.com/watsona4/find_my
 
