@@ -4,13 +4,13 @@ import os
 import os.path
 import time
 from datetime import datetime, timezone
-from zoneinfo import ZoneInfo
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
+from zoneinfo import ZoneInfo
 
 import paho.mqtt.client as mqtt
 from paho.mqtt.enums import CallbackAPIVersion
-from paramiko import WarningPolicy, SSHClient
+from paramiko import SSHClient, WarningPolicy
 
 # ---- Env ----
 MQTT_HOST: str = str(os.environ.get("MQTT_HOST", ""))
@@ -87,13 +87,14 @@ def pub(
 def parse_item(obj: Dict[str, Any], tz: str) -> Optional[Dict[str, Any]]:
     # Items.data entries (AirTag, accessories). Must have location.
     try:
+        logging.info("Found item named %s", obj["name"])
         identifier = obj["identifier"]
         name = obj["name"]
         manufacturer = obj["productType"]["productInformation"]["manufacturerName"]
         model = obj["productType"]["productInformation"]["modelName"]
-        serial_number = obj["serialNumber"] or identifier
+        serial_number = obj.get("serialNumber", identifier)
         sw_version = obj["systemVersion"]
-        address = obj.get("address", {}).get("mapItemFullAddress", "")
+        address = (obj.get("address") or {}).get("mapItemFullAddress") or ""
         loc = obj["location"]
         if not loc:
             return None
@@ -134,29 +135,20 @@ def parse_item(obj: Dict[str, Any], tz: str) -> Optional[Dict[str, Any]]:
 def parse_device(obj: Dict[str, Any], tz: str) -> Optional[Dict[str, Any]]:
     # Devices.data entries (phones, macs, watches). Must be locationCapable and have location.
     try:
+        logging.info("Found device named %s", obj["name"])
         if not obj.get("locationCapable"):
             return None
-        if not obj.get("location"):
-            return None
+
         identifier = obj["deviceDiscoveryId"]
         name = obj["name"]
-        manufacturer = obj.get("deviceClass") or "Apple"
+        manufacturer = obj.get("deviceClass", "Apple")
         model = obj["deviceModel"]
         serial_number = identifier
-        sw_version = obj.get("deviceDisplayName") or ""
-        address = obj.get("address", {}).get("mapItemFullAddress", "")
-        loc = obj["location"]
-        latitude = loc["latitude"]
-        longitude = loc["longitude"]
-        altitude = loc.get("altitude")
-        v_acc = loc.get("verticalAccuracy")
-        h_acc = loc.get("horizontalAccuracy")
-        ts = datetime.fromtimestamp(int(loc["timeStamp"]) // 1000, timezone.utc).astimezone(
-            ZoneInfo(tz)
-        )
+        sw_version = obj.get("deviceDisplayName", "")
+        address = (obj.get("address") or {}).get("mapItemFullAddress") or ""
         battery_status = obj.get("batteryStatus")
 
-        return {
+        data = {
             "device_id": normalize_device_id(serial_number),
             "unique_id": identifier,
             "name": name,
@@ -164,17 +156,27 @@ def parse_device(obj: Dict[str, Any], tz: str) -> Optional[Dict[str, Any]]:
             "model": model,
             "sw_version": sw_version,
             "address": address,
-            "latitude": latitude,
-            "longitude": longitude,
-            "altitude": altitude,
-            "vertical_accuracy": v_acc,
-            "gps_accuracy": h_acc,
-            "timestamp": ts,
             "battery_status": battery_status,
             "antenna_power": None,
             "raw": obj,
             "model_or_class": manufacturer if manufacturer else model,
         }
+
+        loc = obj.get("location")
+        if loc and "latitude" in loc and "longitude" in loc:
+            data.update({
+                "latitude": loc["latitude"],
+                "longitude": loc["longitude"],
+                "altitude": loc.get("altitude"),
+                "verical_accuracy": loc.get("verticalAccuracy"),
+                "gps_accuracy": loc.get("horizontalAccuracy"),
+                "timestamp": datetime.fromtimestamp(
+                    int(loc["timeStamp"]) // 1000, timezone.utc
+                ).astimezone(ZoneInfo(tz)),
+            })
+
+        return data
+
     except Exception:
         return None
 
@@ -212,27 +214,39 @@ def publish_entry(mqtt_client: mqtt.Client, entry: Dict[str, Any]) -> None:
     avail_topic = f"{BASE_TOPIC}/devices/{device_id}/availability"
     raw_topic = f"{BASE_TOPIC}/devices/{device_id}/raw"
 
-    # per-device availability set online when we publish fresh data
+    # mark device online for this update
     pub(mqtt_client, avail_topic, "online", qos=1, retain=True)
 
-    # state: set a simple "not_home" unless you compute zones elsewhere
+    # state: "None" so HA computes from zones when lat/lon are omitted
     pub(mqtt_client, state_topic, "None", qos=1, retain=False)
 
-    attrs = {
-        "latitude": entry["latitude"],
-        "longitude": entry["longitude"],
-        "altitude": entry["altitude"],
-        "vertical_accuracy": entry["vertical_accuracy"],
-        "gps_accuracy": entry["gps_accuracy"],
-        "battery_status": entry["battery_status"],
-        "antenna_power": entry["antenna_power"],
-        "timestamp": entry["timestamp"].isoformat(),
-        "address": entry["address"],
-    }
-    pub(mqtt_client, attr_topic, json.dumps(attrs), qos=1, retain=False)
+    # build attributes only for present, non-None fields
+    attrs: Dict[str, Any] = {}
+    for k in (
+        "latitude",
+        "longitude",
+        "altitude",
+        "vertical_accuracy",
+        "gps_accuracy",
+        "battery_status",
+        "antenna_power",
+        "address",
+    ):
+        v = entry.get(k)
+        if v is not None:
+            attrs[k] = v
+
+    ts = entry.get("timestamp")
+    if ts:
+        # ts may already be aware; serialize safely
+        attrs["timestamp"] = ts.isoformat()
+
+    pub(mqtt_client, attr_topic, json.dumps(attrs, default=str), qos=1, retain=False)
 
     # optional full object for debugging
-    pub(mqtt_client, raw_topic, json.dumps(entry["raw"]), qos=0, retain=False)
+    raw = entry.get("raw")
+    if raw is not None:
+        pub(mqtt_client, raw_topic, json.dumps(raw, default=str), qos=0, retain=False)
 
 
 def main():
